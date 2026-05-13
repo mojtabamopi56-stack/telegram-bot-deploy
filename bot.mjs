@@ -1,40 +1,81 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
 const TOKEN = "8129620169:AAFVQHtaLUUBEayBm9msUS5hLQ2ng15MjUk";
 const BASE_URL = `https://api.telegram.org/bot${TOKEN}`;
 const ADMIN_USERNAME = "mojeao";
 const MANDATORY_CHANNEL = "lnterFreedom";
 const MANDATORY_CHANNEL_LINK = "https://t.me/lnterFreedom";
 
-const EMOJI = {
-  subscribe: "5206607081334906820",
-  invite:    "5424818078833715060",
-  profile:   "5190806721286657692",
-  support:   "5413704112220949842",
-  rules:     "5271604874419647061",
-  guide:     "5447644880824181073",
+// ─── Premium Emoji IDs ───────────────────────────────────────────────────────
+const ID = {
+  btn_subscribe: "5206607081334906820",
+  btn_invite:    "5424818078833715060",
+  btn_profile:   "5190806721286657692",
+  btn_support:   "5413704112220949842",
+  btn_rules:     "5271604874419647061",
+  btn_guide:     "5447644880824181073",
+  check:         "5472363448404809929",
+  cross:         "5436040291507247633",
+  party:         "6037618875846102911",
+  orange:        "5375296873982604963",
+  money:         "5231200819986047254",
+  chart:         "5395444784611480792",
+  link:          "5461117441612462242",
+  up:            "5391112412445288650",
+  bulb:          "5334544901428229844",
+  plus:          "5264713049637409446",
+  trophy:        "5453957997418004470",
+  person:        "5246989476248429334",
+  hero:          "5440660757194744323",
+  gift:          "5240241223632954241",
+  info:          "5472308992514464048",
+  calendar:      "5400250414929041085",
+  red:           "5994495364084796671",
+  phone:         "5436113877181941026",
+  bell:          "5465665476971471368",
+  key:           "5472027899789843495",
+  gear:          "6300757202651055745",
+  broadcast:     "5422439311196834318",
+  user_icon:     "4981404027402061416",
+  search:        "5213383002129702114",
+  coin:          "5427009714745517609",
+  tool:          "6032751234790726550",
+  clipboard:     "5255883984151276991",
+  note:          "5785193735075663481",
+  lock:          "5785219784052314091",
+  antenna:       "5924664865208671041",
+  trash:         "5785033300867288899",
+  moon:          "5215392879320505675",
 };
 
-// ─── Database ───────────────────────────────────────────────────────────────
+// Premium emoji tag for message text
+function e(id, fallback = "•") {
+  return `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>`;
+}
+
+// ─── Database ────────────────────────────────────────────────────────────────
 const DB_PATH = existsSync("/data") ? "/data/db.json" : join(__dirname, "db.json");
 
 function loadDB() {
   if (!existsSync(DB_PATH)) {
     return {
       users: {},
-      settings: { subscriptionCost: 2, subscriptionName: "اشتراک 1 گیگی 24 ساعته", configs: [] },
-      pendingBroadcast: {},
-      pendingAddPoints: {},
-      pendingRemovePoints: {},
-      pendingAddConfig: {},
+      settings: {
+        subscriptionCost: 2,
+        subscriptionName: "اشتراک 1 گیگی 24 ساعته",
+        configs: [],
+        welcomeText: null,
+        maintenanceMode: false,
+      },
+      adminState: {},
       banned: {},
     };
   }
-  return JSON.parse(readFileSync(DB_PATH, "utf8"));
+  try { return JSON.parse(readFileSync(DB_PATH, "utf8")); }
+  catch { return loadDB(); }
 }
 
 function saveDB(db) {
@@ -44,14 +85,9 @@ function saveDB(db) {
 function getUser(db, userId, name, username) {
   if (!db.users[userId]) {
     db.users[userId] = {
-      id: userId,
-      name: name || "بدون نام",
-      username: username || null,
-      points: 0,
-      referrals: 0,
-      referredBy: null,
-      joinDate: new Date().toISOString().slice(0, 10),
-      subscriptions: [],
+      id: userId, name: name || "بدون نام", username: username || null,
+      points: 0, referrals: 0, referredBy: null,
+      joinDate: new Date().toISOString().slice(0, 10), subscriptions: [],
     };
     saveDB(db);
   } else {
@@ -63,28 +99,32 @@ function getUser(db, userId, name, username) {
   return db.users[userId];
 }
 
-// ─── Telegram API ────────────────────────────────────────────────────────────
+// ─── Telegram API ─────────────────────────────────────────────────────────────
 async function api(method, params = {}) {
   try {
     const res = await fetch(`${BASE_URL}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
     });
     return res.json();
-  } catch (e) {
-    console.error(`API error [${method}]:`, e.message);
+  } catch (err) {
+    console.error(`[${method}]`, err.message);
     return { ok: false };
   }
 }
 
-async function sendMsg(chatId, text, extra = {}) {
-  return api("sendMessage", { chat_id: chatId, text, parse_mode: "HTML", ...extra });
-}
+const sendMsg = (chatId, text, extra = {}) =>
+  api("sendMessage", { chat_id: chatId, text, parse_mode: "HTML", ...extra });
 
-async function editMsg(chatId, messageId, text, extra = {}) {
-  return api("editMessageText", { chat_id: chatId, message_id: messageId, text, parse_mode: "HTML", ...extra });
-}
+const editMsg = (chatId, msgId, text, extra = {}) =>
+  api("editMessageText", { chat_id: chatId, message_id: msgId, text, parse_mode: "HTML", ...extra });
+
+const answerCb = (id, text = "", alert = false) =>
+  api("answerCallbackQuery", { callback_query_id: id, text, show_alert: alert });
+
+// copyMessage preserves ALL entities including premium custom emoji
+const copyMsg = (fromChatId, msgId, toChatId) =>
+  api("copyMessage", { chat_id: toChatId, from_chat_id: fromChatId, message_id: msgId });
 
 async function isMember(userId, channel) {
   const r = await api("getChatMember", { chat_id: `@${channel}`, user_id: userId });
@@ -95,84 +135,103 @@ async function isMember(userId, channel) {
 let BOT_USERNAME = "";
 async function getBotInfo() {
   const r = await api("getMe");
-  if (r.ok) BOT_USERNAME = r.result.username;
-  console.log("Bot username:", BOT_USERNAME);
+  if (r.ok) { BOT_USERNAME = r.result.username; console.log("Bot:", BOT_USERNAME); }
 }
 
-// ─── Keyboards ───────────────────────────────────────────────────────────────
-function mainKeyboard() {
-  return {
-    keyboard: [
-      [{ text: "دریافت اشتراک", icon_custom_emoji_id: EMOJI.subscribe, style: "primary" }],
-      [
-        { text: "دعوت دوستان", icon_custom_emoji_id: EMOJI.invite, style: "primary" },
-        { text: "پروفایل", icon_custom_emoji_id: EMOJI.profile, style: "primary" },
-      ],
-      [
-        { text: "پشتیبانی", icon_custom_emoji_id: EMOJI.support, style: "primary" },
-        { text: "قوانین", icon_custom_emoji_id: EMOJI.rules, style: "primary" },
-      ],
-      [{ text: "راهنما", icon_custom_emoji_id: EMOJI.guide, style: "primary" }],
+// ─── Keyboards ────────────────────────────────────────────────────────────────
+const mainKeyboard = () => ({
+  keyboard: [
+    [{ text: "دریافت اشتراک", icon_custom_emoji_id: ID.btn_subscribe, style: "primary" }],
+    [
+      { text: "دعوت دوستان", icon_custom_emoji_id: ID.btn_invite, style: "primary" },
+      { text: "پروفایل",     icon_custom_emoji_id: ID.btn_profile, style: "primary" },
     ],
-    resize_keyboard: true,
-    persistent: true,
-  };
-}
-
-function joinInlineKeyboard() {
-  return {
-    inline_keyboard: [
-      [{ text: "📢 عضویت در کانال", url: MANDATORY_CHANNEL_LINK }],
-      [{ text: "✅ تایید عضویت", callback_data: "verify_membership" }],
+    [
+      { text: "پشتیبانی", icon_custom_emoji_id: ID.btn_support, style: "primary" },
+      { text: "قوانین",   icon_custom_emoji_id: ID.btn_rules,   style: "primary" },
     ],
-  };
-}
+    [{ text: "راهنما", icon_custom_emoji_id: ID.btn_guide, style: "primary" }],
+  ],
+  resize_keyboard: true,
+  persistent: true,
+});
 
-// ─── Messages ────────────────────────────────────────────────────────────────
-function welcomeText() {
-  return `🔔 <b>به ربات کانفیگ رایگان خوش آمدید</b>
+// Inline button with premium emoji icon
+const ib = (text, data, eid) =>
+  eid ? { text, callback_data: data, icon_custom_emoji_id: eid } : { text, callback_data: data };
 
-🔔 با این ربات می‌تونی خیلی راحت:
-✅ کانفیگ‌های پرسرعت و باکیفیت دریافت کنی
-✅ با فعالیت و دعوت دوستان، امتیاز جمع کنی
-✅ با امتیازهای کانفیگ رایگان بگیری
-✅ همیشه از وضعیت و سلامت سرویس‌ها با خبر باشی
+const ibUrl = (text, url, eid) =>
+  eid ? { text, url, icon_custom_emoji_id: eid } : { text, url };
 
-🔴 یکی از گزینه‌های زیر رو انتخاب کن:
+const joinKeyboard = () => ({
+  inline_keyboard: [
+    [ibUrl("عضویت در کانال", MANDATORY_CHANNEL_LINK, ID.antenna)],
+    [ib("تایید عضویت", "verify_membership", ID.check)],
+  ],
+});
+
+// ─── Admin Panel Keyboard ─────────────────────────────────────────────────────
+const adminKeyboard = () => ({
+  inline_keyboard: [
+    [ib("وضعیت ربات",      "a_status",    ID.clipboard), ib("آمار کامل",        "a_stats",     ID.chart)],
+    [ib("آخرین کاربران",   "a_recent",    ID.person),    ib("برترین دعوت‌ها",   "a_top_ref",   ID.trophy)],
+    [ib("بیشترین سرویس",   "a_top_sub",   ID.hero),      ib("ثروتمندترین‌ها",   "a_top_rich",  ID.coin)],
+    [ib("پیام به کاربر",   "a_msg_user",  ID.note),      ib("پیام همگانی",      "a_broadcast", ID.broadcast)],
+    [ib("جستجوی کاربر",    "a_search",    ID.search),    ib("اطلاعات کاربر",    "a_userinfo",  ID.user_icon)],
+    [ib("رفع مسدودی",      "a_unban",     ID.check),     ib("مسدود کردن",       "a_ban",       ID.cross)],
+    [ib("افزودن سکه",      "a_add_pts",   ID.plus),      ib("تنظیم سکه",        "a_set_pts",   ID.money)],
+    [ib("ری‌ست سکه",       "a_reset_pts", ID.moon),      ib("سرویس دستی",       "a_manual_sub",ID.gift)],
+    [ib("متن خوش‌آمد",     "a_welcome",   ID.bell),      ib("حذف کاربر",        "a_del_user",  ID.trash)],
+    [ib("کانال‌های اجباری","a_channels",  ID.antenna),   ib("تنظیمات سکه‌ها",  "a_coin_cfg",  ID.gear)],
+    [ib("همه کاربران",     "a_allusers",  ID.clipboard), ib("آمار ماهانه",      "a_monthly",   ID.calendar)],
+    [ib("مدیریت کانفیگ",   "a_configs",   ID.key),       ib("گزارش کامل",       "a_report",    ID.chart)],
+    [ib("افزودن کانفیگ",   "a_addconfig", ID.plus)],
+    [ib("حالت تعمیر",      "a_maintenance",ID.tool)],
+    [ib("بازگشت",          "a_back",      ID.info)],
+  ],
+});
+
+const backRow = () => ({ inline_keyboard: [[ib("بازگشت به پنل", "a_back", ID.info)]] });
+
+// ─── Message Templates ────────────────────────────────────────────────────────
+const welcomeText = (custom) => custom || `${e(ID.bell)} <b>به ربات کانفیگ رایگان خوش آمدید</b>
+
+${e(ID.bell)} با این ربات می‌تونی خیلی راحت:
+${e(ID.check)} کانفیگ‌های پرسرعت و باکیفیت دریافت کنی
+${e(ID.check)} با فعالیت و دعوت دوستان، امتیاز جمع کنی
+${e(ID.check)} با امتیازهای کانفیگ رایگان بگیری
+${e(ID.check)} همیشه از وضعیت و سلامت سرویس‌ها با خبر باشی
+
+${e(ID.red)} یکی از گزینه‌های زیر رو انتخاب کن:
 @${BOT_USERNAME}`;
-}
 
-function channelCheckText() {
-  return `📱 <b>برای استفاده از ربات ابتدا باید در کانال زیر عضو شوید</b>
+const channelText = () =>
+  `${e(ID.phone)} <b>برای استفاده از ربات ابتدا باید در کانال زیر عضو شوید</b>\n\n${e(ID.check)} پس از عضویت روی دکمه «تایید عضویت» کلیک کنید.`;
 
-🤝 پس از عضویت روی دکمه «تایید عضویت» کلیک کنید.`;
-}
+const rulesText = () =>
+  `${e(ID.clipboard)} <b>قوانین و شرایط استفاده</b>
 
-function rulesText() {
-  return `📋 <b>قوانین و شرایط استفاده</b>
+${e(ID.lock)} کاربر گرامی،
+برای حفظ کیفیت سرویس‌ها و ایجاد تجربه‌ای عادلانه رعایت موارد زیر الزامی است:
 
-⚖️ کاربر گرامی،
-برای حفظ کیفیت سرویس‌ها و ایجاد تجربه‌ای عادلانه برای همه کاربران، رعایت موارد زیر الزامی است:
-
-🔒 <b>حریم خصوصی</b>
+${e(ID.lock)} <b>حریم خصوصی</b>
 • اطلاعات شما کاملاً محرمانه بوده و فقط جهت مدیریت سرویس استفاده می‌شود.
 
-🏆 <b>سیستم دعوت (رفرال)</b>
+${e(ID.trophy)} <b>سیستم دعوت (رفرال)</b>
 • دریافت اشتراک رایگان از طریق دعوت دوستان با لینک اختصاصی شما امکان‌پذیر است.
-• هرگونه تقلب (اکانت فیک، ربات یا دور زدن سیستم) شناسایی شده و منجر به مسدودسازی دائمی حساب و حذف امتیازات خواهد شد.
+• هرگونه تقلب (اکانت فیک، ربات یا دور زدن سیستم) منجر به مسدودسازی دائمی حساب خواهد شد.
 
-🚫 <b>قوانین استفاده</b>
+${e(ID.cross)} <b>قوانین استفاده</b>
 • اشتراک دریافتی صرفاً برای استفاده شخصی بوده و به اشتراک‌گذاری آن ممنوع است.
-• استفاده از سرویس برای فعالیت‌های مخرب، اسم یا حملات (DDoS) اکیداً ممنوع می‌باشد.
+• استفاده از سرویس برای فعالیت‌های مخرب یا حملات DDoS اکیداً ممنوع می‌باشد.
 
-‼️ <b>مسئولیت</b>
+${e(ID.info)} <b>مسئولیت</b>
 • تمامی مسئولیت نحوه استفاده از سرویس بر عهده کاربر خواهد بود.`;
-}
 
-function guideText(db) {
+const guideText = (db) => {
   const cost = db.settings.subscriptionCost;
   const name = db.settings.subscriptionName;
-  return `❓ <b>راهنمای دریافت اشتراک رایگان</b>
+  return `${e(ID.bulb)} <b>راهنمای دریافت اشتراک رایگان</b>
 
 برای دریافت اشتراک پرسرعت، مراحل زیر را دنبال کنید:
 
@@ -183,85 +242,81 @@ function guideText(db) {
 لینک را برای دوستان خود ارسال کنید. با عضویت هر کاربر، امتیاز به حساب شما افزوده می‌شود.
 
 3️⃣ <b>مرحله ۳: دریافت اشتراک</b>
-پس از رسیدن امتیاز به حد نصاب، از بخش «دریافت اشتراک»، کانفیگ خود را به صورت رایگان دریافت کنید.
+پس از رسیدن امتیاز به حد نصاب، از بخش «دریافت اشتراک»، کانفیگ خود را رایگان دریافت کنید.
 
-💡 <b>نکته مهم</b>
+${e(ID.bulb)} <b>نکته مهم</b>
 سیستم دارای آنتی‌تقلب بوده و استفاده از اکانت‌های فیک منجر به حذف امتیازات خواهد شد.
 
-🔧 <b>پشتیبانی</b>
+${e(ID.tool)} <b>پشتیبانی</b>
 در صورت بروز مشکل، از بخش «پشتیبانی» اقدام کنید.
 
-📊 هزینه اشتراک فعلی: <b>${cost} امتیاز</b> برای ${name}`;
-}
+${e(ID.coin)} هزینه اشتراک فعلی: <b>${cost} امتیاز</b> — ${name}`;
+};
 
-// ─── Handlers ────────────────────────────────────────────────────────────────
+// ─── Handlers ─────────────────────────────────────────────────────────────────
 async function handleStart(msg, db) {
-  const userId = msg.from.id;
-  const name = msg.from.first_name || "کاربر";
-  const username = msg.from.username || null;
-  const text = msg.text || "";
+  const { id: userId, first_name, username } = msg.from;
   const chatId = msg.chat.id;
+  const text = msg.text || "";
+  const user = getUser(db, userId, first_name, username || null);
 
-  const user = getUser(db, userId, name, username);
-
-  // Handle referral
-  const refMatch = text.match(/\/start ref_(\d+)/);
-  if (refMatch && !user.referredBy) {
-    const referrerId = parseInt(refMatch[1]);
-    if (referrerId !== userId && db.users[referrerId]) {
-      user.referredBy = referrerId;
-      db.users[referrerId].points += 1;
-      db.users[referrerId].referrals += 1;
+  // Referral
+  const ref = text.match(/\/start ref_(\d+)/);
+  if (ref && !user.referredBy) {
+    const rid = parseInt(ref[1]);
+    if (rid !== userId && db.users[rid]) {
+      user.referredBy = rid;
+      const referrer = db.users[rid];
+      const prev = referrer.points;
+      referrer.points += 1;
+      referrer.referrals += 1;
       saveDB(db);
-
-      const referrer = db.users[referrerId];
-      const prevPoints = referrer.points - 1;
-      const refName = username ? `@${username}` : name;
-      await sendMsg(referrerId,
-        `🎉 <b>زیرمجموعه جدید!</b>\n\n🟠 به ربات دعوت شد <b>${refName}</b>\n\n💰 موجودی شما:\nقبل: ${prevPoints} امتیاز\nبعد: ${referrer.points} امتیاز (+1)\n\n📊 تعداد کل زیرمجموعه‌های شما: ${referrer.referrals}`
+      const who = username ? `@${username}` : first_name;
+      await sendMsg(rid,
+        `${e(ID.party)} <b>زیرمجموعه جدید!</b>\n\n${e(ID.orange)} به ربات دعوت شد <b>${who}</b>\n\n${e(ID.money)} موجودی شما:\nقبل: ${prev} امتیاز\nبعد: ${referrer.points} امتیاز (+1)\n\n${e(ID.chart)} تعداد کل زیرمجموعه‌های شما: ${referrer.referrals}`
       );
     }
   }
 
-  // Check mandatory membership
-  const member = await isMember(userId, MANDATORY_CHANNEL);
-  if (!member) {
-    await sendMsg(chatId, channelCheckText(), {
-      reply_markup: joinInlineKeyboard(),
-    });
+  // Maintenance
+  if (db.settings.maintenanceMode) {
+    await sendMsg(chatId, `${e(ID.tool)} ربات در حال تعمیر است. لطفاً بعداً مراجعه کنید.`);
     return;
   }
 
-  await sendMsg(chatId, welcomeText(), { reply_markup: mainKeyboard() });
+  // Mandatory channel
+  const member = await isMember(userId, MANDATORY_CHANNEL);
+  if (!member) {
+    await sendMsg(chatId, channelText(), { reply_markup: joinKeyboard() });
+    return;
+  }
+
+  await sendMsg(chatId, welcomeText(db.settings.welcomeText), { reply_markup: mainKeyboard() });
 }
 
 async function handleSubscribe(chatId, userId, db) {
-  const member = await isMember(userId, MANDATORY_CHANNEL);
-  if (!member) {
-    await sendMsg(chatId, channelCheckText(), { reply_markup: joinInlineKeyboard() });
+  if (db.settings.maintenanceMode) {
+    await sendMsg(chatId, `${e(ID.tool)} ربات در حال تعمیر است.`);
     return;
   }
+  const member = await isMember(userId, MANDATORY_CHANNEL);
+  if (!member) { await sendMsg(chatId, channelText(), { reply_markup: joinKeyboard() }); return; }
 
   const user = db.users[userId];
   const cost = db.settings.subscriptionCost;
+  const current = user?.points || 0;
 
-  if (!user || user.points < cost) {
-    const current = user?.points || 0;
-    const diff = cost - current;
+  if (current < cost) {
     await sendMsg(chatId,
-      `❌ <b>امتیاز کافی نیست!</b>\n\n🦸 هزینه اشتراک: ${cost} امتیاز\n🧑 امتیاز فعلی شما: ${current}\n🔵 امتیاز کمبود: ${diff}\n\n💡 با دعوت دوستان می‌توانید امتیاز کسب کنید!`,
-      {
-        reply_markup: {
-          inline_keyboard: [[{ text: "🍑 دعوت دوستان", callback_data: "show_invite" }]],
-        },
-      }
+      `${e(ID.cross)} <b>امتیاز کافی نیست!</b>\n\n${e(ID.hero)} هزینه اشتراک: ${cost} امتیاز\n${e(ID.person)} امتیاز فعلی شما: ${current}\n${e(ID.bulb)} امتیاز کمبود: ${cost - current}\n\n${e(ID.bulb)} با دعوت دوستان می‌توانید امتیاز کسب کنید!`,
+      { reply_markup: { inline_keyboard: [[ib("دعوت دوستان", "show_invite", ID.btn_invite)]] } }
     );
     return;
   }
 
   const configs = db.settings.configs || [];
-  if (configs.length === 0) {
-    await sendMsg(chatId, "⚠️ در حال حاضر کانفیگی موجود نیست.\nلطفاً با پشتیبانی در تماس باشید.");
+  if (!configs.length) {
+    await sendMsg(chatId, `${e(ID.info)} در حال حاضر کانفیگی موجود نیست.\nلطفاً با پشتیبانی در تماس باشید.`);
     return;
   }
 
@@ -272,7 +327,7 @@ async function handleSubscribe(chatId, userId, db) {
   saveDB(db);
 
   await sendMsg(chatId,
-    `✅ <b>اشتراک شما با موفقیت فعال شد!</b>\n\n🔑 کانفیگ شما:\n<code>${config}</code>\n\n💰 امتیاز باقیمانده: ${user.points}`
+    `${e(ID.check)} <b>اشتراک شما با موفقیت فعال شد!</b>\n\n${e(ID.key)} کانفیگ شما:\n<code>${config}</code>\n\n${e(ID.money)} امتیاز باقیمانده: ${user.points}`
   );
 }
 
@@ -281,400 +336,558 @@ async function handleInvite(chatId, userId, db) {
   const cost = db.settings.subscriptionCost;
   const name = db.settings.subscriptionName;
   const link = `https://t.me/${BOT_USERNAME}?start=ref_${userId}`;
-
   await sendMsg(chatId,
-    `🎁 <b>سیستم دعوت دوستان</b>\n\n➕ امتیاز هر دعوت: 1\n🏆 تعداد دعوت‌های شما: ${user.referrals}\n🧑 امتیاز فعلی: ${user.points}\n\n🔗 لینک دعوت اختصاصی شما:\n<code>${link}</code>\n\n⬆️ این لینک را با دوستان خود بگذارید و به ازای هر نفر که وارد ربات شود، 1 امتیاز دریافت کنید!\n\n💡 با ${cost} امتیاز می‌توانید یک ${name} دریافت کنید.`
+    `${e(ID.gift)} <b>سیستم دعوت دوستان</b>\n\n${e(ID.plus)} امتیاز هر دعوت: 1\n${e(ID.trophy)} تعداد دعوت‌های شما: ${user.referrals}\n${e(ID.person)} امتیاز فعلی: ${user.points}\n\n${e(ID.link)} لینک دعوت اختصاصی شما:\n<code>${link}</code>\n\n${e(ID.up)} این لینک را با دوستان خود بگذارید و به ازای هر نفر که وارد ربات شود، 1 امتیاز دریافت کنید!\n\n${e(ID.bulb)} با ${cost} امتیاز می‌توانید یک ${name} دریافت کنید.`
   );
 }
 
 async function handleProfile(chatId, userId, db) {
-  const user = db.users[userId];
-  const uname = user.username ? `@${user.username}` : "—";
+  const u = db.users[userId];
+  const uname = u.username ? `@${u.username}` : "—";
   await sendMsg(chatId,
-    `✏️ <b>پروفایل شما</b>\n\n😀 شناسه: <code>${user.id}</code>\n🦸 نام: ${user.name}\nℹ️ نام کاربری: ${uname}\n🧑 امتیاز فعلی: ${user.points}\n🏆 تعداد دعوت: ${user.referrals}\n📅 تاریخ عضویت: ${user.joinDate}`
+    `${e(ID.note)} <b>پروفایل شما</b>\n\n${e(ID.search)} شناسه: <code>${u.id}</code>\n${e(ID.hero)} نام: ${u.name}\n${e(ID.info)} نام کاربری: ${uname}\n${e(ID.person)} امتیاز فعلی: ${u.points}\n${e(ID.trophy)} تعداد دعوت: ${u.referrals}\n${e(ID.calendar)} تاریخ عضویت: ${u.joinDate}`
   );
 }
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
-function adminMainKeyboard() {
-  return {
-    inline_keyboard: [
-      [
-        { text: "📊 آمار کلی", callback_data: "admin_stats" },
-        { text: "👥 کاربران", callback_data: "admin_users" },
-      ],
-      [
-        { text: "📣 ارسال همگانی", callback_data: "admin_broadcast" },
-        { text: "⚙️ تنظیمات", callback_data: "admin_settings" },
-      ],
-      [
-        { text: "➕ افزودن کانفیگ", callback_data: "admin_add_config" },
-        { text: "🎯 مدیریت امتیاز", callback_data: "admin_points" },
-      ],
-    ],
-  };
-}
-
-async function handleAdminCommand(chatId, username, db) {
-  if (!username || username.toLowerCase() !== ADMIN_USERNAME) {
-    await sendMsg(chatId, "⛔️ دسترسی ندارید.");
-    return;
-  }
+async function showAdminPanel(chatId, db) {
   const total = Object.keys(db.users).length;
   const configs = (db.settings.configs || []).length;
+  const maintenance = db.settings.maintenanceMode ? "🔴 روشن" : "🟢 خاموش";
   await sendMsg(chatId,
-    `🔧 <b>پنل مدیریت</b>\n\nخوش آمدید @${username}\n\n👤 کل کاربران: ${total}\n🔑 کانفیگ‌های موجود: ${configs}\n💰 هزینه اشتراک: ${db.settings.subscriptionCost} امتیاز`,
-    { reply_markup: adminMainKeyboard() }
+    `${e(ID.check)} <b>پنل مدیریت ادمین</b>\n\n${e(ID.person)} کل کاربران: <b>${total}</b>\n${e(ID.key)} کانفیگ‌های موجود: <b>${configs}</b>\n${e(ID.coin)} هزینه اشتراک: <b>${db.settings.subscriptionCost} امتیاز</b>\n${e(ID.tool)} حالت تعمیر: ${maintenance}`,
+    { reply_markup: adminKeyboard() }
   );
 }
 
-async function handleAdminCallback(callbackQuery, db) {
-  const chatId = callbackQuery.message.chat.id;
-  const msgId = callbackQuery.message.message_id;
-  const data = callbackQuery.data;
-  const username = callbackQuery.from.username?.toLowerCase();
-  const userId = callbackQuery.from.id;
+function setAdminState(db, adminId, state) {
+  if (!db.adminState) db.adminState = {};
+  if (state === null) { delete db.adminState[adminId]; }
+  else { db.adminState[adminId] = state; }
+  saveDB(db);
+}
 
-  if (username !== ADMIN_USERNAME) {
-    await api("answerCallbackQuery", { callback_query_id: callbackQuery.id, text: "⛔️ دسترسی ندارید." });
-    return;
+function getAdminState(db, adminId) {
+  return db.adminState?.[adminId] || null;
+}
+
+async function handleAdminCallback(cq, db) {
+  const chatId = cq.message.chat.id;
+  const msgId = cq.message.message_id;
+  const data = cq.data;
+  const adminId = cq.from.id;
+
+  if (cq.from.username?.toLowerCase() !== ADMIN_USERNAME) {
+    await answerCb(cq.id, "⛔️ دسترسی ندارید.", true); return;
+  }
+  await answerCb(cq.id);
+
+  // ── Stats & Info ─────────────────────────────────────────────────────────
+  if (data === "a_back") {
+    setAdminState(db, adminId, null);
+    await showAdminPanel(chatId, db); return;
   }
 
-  await api("answerCallbackQuery", { callback_query_id: callbackQuery.id });
+  if (data === "a_status") {
+    const uptime = Math.floor(process.uptime() / 60);
+    const total = Object.keys(db.users).length;
+    const maintenance = db.settings.maintenanceMode ? "روشن" : "خاموش";
+    await editMsg(chatId, msgId,
+      `${e(ID.clipboard)} <b>وضعیت ربات</b>\n\n${e(ID.check)} آپتایم: ${uptime} دقیقه\n${e(ID.person)} کل کاربران: ${total}\n${e(ID.tool)} حالت تعمیر: ${maintenance}\n${e(ID.key)} کانفیگ‌های موجود: ${(db.settings.configs || []).length}`,
+      { reply_markup: backRow() }); return;
+  }
 
-  if (data === "admin_stats") {
+  if (data === "a_stats") {
     const users = Object.values(db.users);
-    const total = users.length;
-    const totalPoints = users.reduce((a, u) => a + u.points, 0);
+    const totalPts = users.reduce((a, u) => a + u.points, 0);
     const totalRefs = users.reduce((a, u) => a + u.referrals, 0);
     const totalSubs = users.reduce((a, u) => a + u.subscriptions.length, 0);
-    const configs = (db.settings.configs || []).length;
-
     await editMsg(chatId, msgId,
-      `📊 <b>آمار کلی</b>\n\n👥 کل کاربران: ${total}\n💰 مجموع امتیازات: ${totalPoints}\n🏆 مجموع دعوت‌ها: ${totalRefs}\n📦 اشتراک‌های داده شده: ${totalSubs}\n🔑 کانفیگ‌های موجود: ${configs}\n⚙️ هزینه اشتراک: ${db.settings.subscriptionCost} امتیاز`,
-      { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "admin_back" }]] } }
-    );
+      `${e(ID.chart)} <b>آمار کامل</b>\n\n${e(ID.person)} کل کاربران: ${users.length}\n${e(ID.money)} مجموع امتیازات: ${totalPts}\n${e(ID.trophy)} مجموع دعوت‌ها: ${totalRefs}\n${e(ID.gift)} اشتراک‌های داده شده: ${totalSubs}\n${e(ID.key)} کانفیگ‌های باقیمانده: ${(db.settings.configs || []).length}`,
+      { reply_markup: backRow() }); return;
+  }
 
-  } else if (data === "admin_users") {
-    const users = Object.values(db.users).slice(0, 10);
-    let txt = "👥 <b>لیست کاربران (10 نفر اخیر)</b>\n\n";
-    for (const u of users) {
-      const uname = u.username ? `@${u.username}` : u.name;
-      txt += `• ${uname} | امتیاز: ${u.points} | دعوت: ${u.referrals}\n`;
-    }
-    txt += `\n🔍 برای جستجو یا مدیریت کاربر خاص، آیدی عددی او را بنویسید:\n/user [آیدی]`;
-    await editMsg(chatId, msgId, txt, {
-      reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "admin_back" }]] },
+  if (data === "a_recent") {
+    const users = Object.values(db.users).slice(-10).reverse();
+    let txt = `${e(ID.person)} <b>آخرین کاربران</b>\n\n`;
+    users.forEach((u, i) => {
+      txt += `${i + 1}. ${u.username ? "@" + u.username : u.name} | <code>${u.id}</code> | ${u.joinDate}\n`;
     });
+    await editMsg(chatId, msgId, txt, { reply_markup: backRow() }); return;
+  }
 
-  } else if (data === "admin_broadcast") {
-    db.pendingBroadcast[userId] = true;
+  if (data === "a_top_ref") {
+    const top = Object.values(db.users).sort((a, b) => b.referrals - a.referrals).slice(0, 10);
+    let txt = `${e(ID.trophy)} <b>برترین دعوت‌ها</b>\n\n`;
+    top.forEach((u, i) => { txt += `${i + 1}. ${u.username ? "@" + u.username : u.name}: ${u.referrals} دعوت\n`; });
+    await editMsg(chatId, msgId, txt, { reply_markup: backRow() }); return;
+  }
+
+  if (data === "a_top_sub") {
+    const top = Object.values(db.users).sort((a, b) => b.subscriptions.length - a.subscriptions.length).slice(0, 10);
+    let txt = `${e(ID.hero)} <b>بیشترین سرویس</b>\n\n`;
+    top.forEach((u, i) => { txt += `${i + 1}. ${u.username ? "@" + u.username : u.name}: ${u.subscriptions.length} سرویس\n`; });
+    await editMsg(chatId, msgId, txt, { reply_markup: backRow() }); return;
+  }
+
+  if (data === "a_top_rich") {
+    const top = Object.values(db.users).sort((a, b) => b.points - a.points).slice(0, 10);
+    let txt = `${e(ID.coin)} <b>ثروتمندترین‌ها</b>\n\n`;
+    top.forEach((u, i) => { txt += `${i + 1}. ${u.username ? "@" + u.username : u.name}: ${u.points} امتیاز\n`; });
+    await editMsg(chatId, msgId, txt, { reply_markup: backRow() }); return;
+  }
+
+  if (data === "a_monthly") {
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const users = Object.values(db.users).filter(u => u.joinDate?.startsWith(month));
+    const subs = users.reduce((a, u) => a + u.subscriptions.filter(s => s.date?.startsWith(month)).length, 0);
+    await editMsg(chatId, msgId,
+      `${e(ID.calendar)} <b>آمار ماهانه (${month})</b>\n\n${e(ID.person)} کاربران جدید: ${users.length}\n${e(ID.gift)} اشتراک‌های داده شده: ${subs}`,
+      { reply_markup: backRow() }); return;
+  }
+
+  if (data === "a_allusers") {
+    const users = Object.values(db.users);
+    let txt = `${e(ID.clipboard)} <b>همه کاربران (${users.length} نفر)</b>\n\n`;
+    users.slice(0, 50).forEach(u => {
+      txt += `• ${u.username ? "@" + u.username : u.name} | <code>${u.id}</code> | ${u.points}pt\n`;
+    });
+    if (users.length > 50) txt += `\n... و ${users.length - 50} نفر دیگر`;
+    await editMsg(chatId, msgId, txt, { reply_markup: backRow() }); return;
+  }
+
+  if (data === "a_report") {
+    const users = Object.values(db.users);
+    const totalPts = users.reduce((a, u) => a + u.points, 0);
+    const totalRefs = users.reduce((a, u) => a + u.referrals, 0);
+    const totalSubs = users.reduce((a, u) => a + u.subscriptions.length, 0);
+    const banned = Object.keys(db.banned || {}).length;
+    await editMsg(chatId, msgId,
+      `${e(ID.chart)} <b>گزارش کامل</b>\n\n${e(ID.person)} کل کاربران: ${users.length}\n${e(ID.cross)} بن‌شده‌ها: ${banned}\n${e(ID.money)} مجموع امتیازات: ${totalPts}\n${e(ID.trophy)} مجموع دعوت‌ها: ${totalRefs}\n${e(ID.gift)} اشتراک‌های داده شده: ${totalSubs}\n${e(ID.key)} کانفیگ‌های موجود: ${(db.settings.configs || []).length}\n${e(ID.coin)} هزینه اشتراک: ${db.settings.subscriptionCost} امتیاز\n${e(ID.tool)} حالت تعمیر: ${db.settings.maintenanceMode ? "روشن" : "خاموش"}`,
+      { reply_markup: backRow() }); return;
+  }
+
+  if (data === "a_configs") {
+    const configs = db.settings.configs || [];
+    let txt = `${e(ID.key)} <b>مدیریت کانفیگ</b>\n\n${e(ID.info)} تعداد موجود: ${configs.length}\n\n`;
+    configs.slice(0, 5).forEach((c, i) => { txt += `${i + 1}. <code>${c.slice(0, 40)}...</code>\n`; });
+    txt += `\nبرای افزودن کانفیگ از دکمه «افزودن کانفیگ» استفاده کنید.`;
+    await editMsg(chatId, msgId, txt, { reply_markup: backRow() }); return;
+  }
+
+  if (data === "a_coin_cfg") {
+    await editMsg(chatId, msgId,
+      `${e(ID.gear)} <b>تنظیمات سکه‌ها</b>\n\n${e(ID.coin)} هزینه اشتراک: ${db.settings.subscriptionCost} امتیاز\n${e(ID.gift)} نام اشتراک: ${db.settings.subscriptionName}\n\nدستورات:\n• /setcost [عدد] — تغییر هزینه\n• /setname [نام] — تغییر نام اشتراک`,
+      { reply_markup: backRow() }); return;
+  }
+
+  if (data === "a_channels") {
+    await editMsg(chatId, msgId,
+      `${e(ID.antenna)} <b>کانال‌های اجباری</b>\n\n${e(ID.check)} کانال فعلی: @${MANDATORY_CHANNEL}\n\nبرای تغییر کانال از دستور زیر استفاده کنید:\n/setchannel [یوزرنیم کانال]`,
+      { reply_markup: backRow() }); return;
+  }
+
+  if (data === "a_maintenance") {
+    db.settings.maintenanceMode = !db.settings.maintenanceMode;
     saveDB(db);
+    const status = db.settings.maintenanceMode ? "روشن شد" : "خاموش شد";
     await editMsg(chatId, msgId,
-      "📣 <b>ارسال پیام همگانی</b>\n\nپیام خود را بنویسید. این پیام به تمام کاربران ارسال خواهد شد:",
-      { reply_markup: { inline_keyboard: [[{ text: "❌ لغو", callback_data: "admin_cancel" }]] } }
-    );
+      `${e(ID.tool)} حالت تعمیر <b>${status}</b>.`,
+      { reply_markup: backRow() }); return;
+  }
 
-  } else if (data === "admin_settings") {
-    await editMsg(chatId, msgId,
-      `⚙️ <b>تنظیمات</b>\n\n💰 هزینه اشتراک: ${db.settings.subscriptionCost} امتیاز\n📦 نام اشتراک: ${db.settings.subscriptionName}\n\nبرای تغییر هزینه اشتراک بنویسید:\n/setcost [عدد]\n\nبرای تغییر نام اشتراک:\n/setname [نام]`,
-      { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "admin_back" }]] } }
-    );
+  // ── Actions requiring follow-up text ─────────────────────────────────────
+  const promptMap = {
+    a_broadcast:   { state: "broadcast",    prompt: `${e(ID.broadcast)} <b>پیام همگانی</b>\n\nپیام خود را ارسال کنید.\n${e(ID.bulb)} ایموجی پریمیوم کاملاً پشتیبانی می‌شود.` },
+    a_msg_user:    { state: "msg_user_id",   prompt: `${e(ID.note)} <b>پیام به کاربر</b>\n\nآیدی عددی کاربر را بنویسید:` },
+    a_search:      { state: "search",        prompt: `${e(ID.search)} <b>جستجوی کاربر</b>\n\nیوزرنیم یا آیدی عددی را بنویسید:` },
+    a_userinfo:    { state: "userinfo",      prompt: `${e(ID.user_icon)} <b>اطلاعات کاربر</b>\n\nآیدی عددی کاربر را بنویسید:` },
+    a_ban:         { state: "ban",           prompt: `${e(ID.cross)} <b>مسدود کردن</b>\n\nآیدی عددی کاربر را بنویسید:` },
+    a_unban:       { state: "unban",         prompt: `${e(ID.check)} <b>رفع مسدودی</b>\n\nآیدی عددی کاربر را بنویسید:` },
+    a_add_pts:     { state: "add_pts_id",    prompt: `${e(ID.plus)} <b>افزودن سکه</b>\n\nآیدی عددی کاربر را بنویسید:` },
+    a_set_pts:     { state: "set_pts_id",    prompt: `${e(ID.money)} <b>تنظیم سکه</b>\n\nآیدی عددی کاربر را بنویسید:` },
+    a_reset_pts:   { state: "reset_pts",     prompt: `${e(ID.moon)} <b>ری‌ست سکه</b>\n\nآیدی عددی کاربر را بنویسید:` },
+    a_manual_sub:  { state: "manual_sub_id", prompt: `${e(ID.gift)} <b>سرویس دستی</b>\n\nآیدی عددی کاربر را بنویسید:` },
+    a_del_user:    { state: "del_user",      prompt: `${e(ID.trash)} <b>حذف کاربر</b>\n\nآیدی عددی کاربر را بنویسید (برگشت‌ناپذیر):` },
+    a_welcome:     { state: "set_welcome",   prompt: `${e(ID.bell)} <b>متن خوش‌آمد</b>\n\nمتن جدید را ارسال کنید. ایموجی پریمیوم پشتیبانی می‌شود.\nبرای بازگشت به پیش‌فرض بنویسید: /resetwelcome` },
+    a_addconfig:   { state: "addconfig",     prompt: `${e(ID.key)} <b>افزودن کانفیگ</b>\n\nکانفیگ جدید را ارسال کنید:` },
+  };
 
-  } else if (data === "admin_add_config") {
-    db.pendingAddConfig[userId] = true;
-    saveDB(db);
-    await editMsg(chatId, msgId,
-      "➕ <b>افزودن کانفیگ</b>\n\nکانفیگ جدید را ارسال کنید (یک کانفیگ در هر پیام):",
-      { reply_markup: { inline_keyboard: [[{ text: "❌ لغو", callback_data: "admin_cancel" }]] } }
-    );
-
-  } else if (data === "admin_points") {
-    await editMsg(chatId, msgId,
-      "🎯 <b>مدیریت امتیاز</b>\n\nبرای افزودن امتیاز:\n/addpoints [آیدی] [مقدار]\n\nبرای کاهش امتیاز:\n/removepoints [آیدی] [مقدار]\n\nبرای مشاهده پروفایل:\n/user [آیدی]",
-      { reply_markup: { inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "admin_back" }]] } }
-    );
-
-  } else if (data === "admin_cancel") {
-    delete db.pendingBroadcast[userId];
-    delete db.pendingAddConfig[userId];
-    delete db.pendingAddPoints[userId];
-    delete db.pendingRemovePoints[userId];
-    saveDB(db);
-    await handleAdminCommand(chatId, ADMIN_USERNAME, db);
-
-  } else if (data === "admin_back") {
-    await handleAdminCommand(chatId, ADMIN_USERNAME, db);
-
-  } else if (data === "verify_membership") {
-    const fromId = callbackQuery.from.id;
-    const member = await isMember(fromId, MANDATORY_CHANNEL);
-    if (member) {
-      const name = callbackQuery.from.first_name;
-      const uname = callbackQuery.from.username;
-      const db2 = loadDB();
-      getUser(db2, fromId, name, uname);
-      await api("editMessageReplyMarkup", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard: [] } });
-      await sendMsg(chatId, welcomeText(), { reply_markup: mainKeyboard() });
-    } else {
-      await api("answerCallbackQuery", {
-        callback_query_id: callbackQuery.id,
-        text: "❌ هنوز عضو نشدید! ابتدا در کانال عضو شوید.",
-        show_alert: true,
-      });
-    }
-
-  } else if (data === "show_invite") {
-    const fromId = callbackQuery.from.id;
-    const db2 = loadDB();
-    await handleInvite(chatId, fromId, db2);
+  if (promptMap[data]) {
+    const { state, prompt } = promptMap[data];
+    setAdminState(db, adminId, { action: state, data: {} });
+    await editMsg(chatId, msgId, prompt,
+      { reply_markup: { inline_keyboard: [[ib("لغو", "a_back", ID.cross)]] } });
+    return;
   }
 }
 
-// ─── Admin Commands ───────────────────────────────────────────────────────────
-async function handleAdminTextCommands(msg, db) {
-  const text = msg.text || "";
+// ─── Admin Text State Machine ─────────────────────────────────────────────────
+async function handleAdminState(msg, db, adminId) {
+  const state = getAdminState(db, adminId);
+  if (!state) return false;
+
   const chatId = msg.chat.id;
-  const username = msg.from.username?.toLowerCase();
-  const adminId = msg.from.id;
+  const text = msg.text || "";
+  const { action, data: stateData } = state;
 
-  if (username !== ADMIN_USERNAME) return false;
+  // broadcast — use copyMessage to preserve ALL entities including premium emoji
+  if (action === "broadcast") {
+    setAdminState(db, adminId, null);
+    const users = Object.keys(db.users);
+    await sendMsg(chatId, `${e(ID.broadcast)} در حال ارسال به ${users.length} کاربر...`);
+    let sent = 0, failed = 0;
+    for (const uid of users) {
+      const r = await copyMsg(chatId, msg.message_id, parseInt(uid));
+      if (r.ok) sent++; else failed++;
+      await new Promise(r => setTimeout(r, 60));
+    }
+    await sendMsg(chatId, `${e(ID.check)} ارسال تمام شد.\n${e(ID.check)} موفق: ${sent}\n${e(ID.cross)} ناموفق: ${failed}`);
+    return true;
+  }
 
-  // /user [id]
-  if (text.startsWith("/user ")) {
-    const uid = text.split(" ")[1];
-    const u = db.users[uid];
-    if (!u) { await sendMsg(chatId, "❌ کاربر یافت نشد."); return true; }
-    const uname = u.username ? `@${u.username}` : "—";
-    await sendMsg(chatId,
-      `👤 <b>اطلاعات کاربر</b>\n\n🆔 آیدی: <code>${u.id}</code>\n🦸 نام: ${u.name}\nℹ️ یوزرنیم: ${uname}\n💰 امتیاز: ${u.points}\n🏆 دعوت‌ها: ${u.referrals}\n📅 عضویت: ${u.joinDate}\n📦 اشتراک‌های گرفته: ${u.subscriptions.length}`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "➕ افزودن امتیاز", callback_data: `pts_add_${uid}` },
-              { text: "➖ کاهش امتیاز", callback_data: `pts_rem_${uid}` },
-            ],
-            [{ text: "🚫 بن کردن", callback_data: `ban_${uid}` }],
-          ],
-        },
-      }
+  // msg_user_id → get user id, then prompt for message
+  if (action === "msg_user_id") {
+    const uid = text.trim();
+    if (!db.users[uid]) { await sendMsg(chatId, `${e(ID.cross)} کاربر یافت نشد.`); setAdminState(db, adminId, null); return true; }
+    setAdminState(db, adminId, { action: "msg_user_msg", data: { uid } });
+    await sendMsg(chatId, `${e(ID.note)} پیام خود را برای کاربر <code>${uid}</code> بنویسید:\n${e(ID.bulb)} ایموجی پریمیوم پشتیبانی می‌شود.`);
+    return true;
+  }
+
+  // msg_user_msg → send message to user using copyMessage
+  if (action === "msg_user_msg") {
+    const { uid } = stateData;
+    setAdminState(db, adminId, null);
+    const r = await copyMsg(chatId, msg.message_id, parseInt(uid));
+    if (r.ok) await sendMsg(chatId, `${e(ID.check)} پیام ارسال شد.`);
+    else await sendMsg(chatId, `${e(ID.cross)} ارسال ناموفق. کاربر ربات را بلاک کرده باشد.`);
+    return true;
+  }
+
+  // search
+  if (action === "search") {
+    setAdminState(db, adminId, null);
+    const q = text.trim().replace("@", "");
+    const found = Object.values(db.users).filter(u =>
+      u.id?.toString() === q || u.username?.toLowerCase() === q.toLowerCase()
     );
+    if (!found.length) { await sendMsg(chatId, `${e(ID.cross)} کاربری یافت نشد.`); return true; }
+    const u = found[0];
+    await sendUserInfo(chatId, u, db);
     return true;
   }
 
-  // /setcost [n]
-  if (text.startsWith("/setcost ")) {
-    const n = parseInt(text.split(" ")[1]);
-    if (isNaN(n) || n < 1) { await sendMsg(chatId, "❌ عدد نامعتبر."); return true; }
-    db.settings.subscriptionCost = n;
+  // userinfo
+  if (action === "userinfo") {
+    setAdminState(db, adminId, null);
+    const u = db.users[text.trim()];
+    if (!u) { await sendMsg(chatId, `${e(ID.cross)} کاربر یافت نشد.`); return true; }
+    await sendUserInfo(chatId, u, db);
+    return true;
+  }
+
+  // ban
+  if (action === "ban") {
+    setAdminState(db, adminId, null);
+    const uid = text.trim();
+    if (!db.users[uid]) { await sendMsg(chatId, `${e(ID.cross)} کاربر یافت نشد.`); return true; }
+    if (!db.banned) db.banned = {};
+    db.banned[uid] = true;
     saveDB(db);
-    await sendMsg(chatId, `✅ هزینه اشتراک به ${n} امتیاز تغییر یافت.`);
+    await sendMsg(chatId, `${e(ID.check)} کاربر <code>${uid}</code> مسدود شد.`);
     return true;
   }
 
-  // /setname [name]
-  if (text.startsWith("/setname ")) {
-    const name = text.replace("/setname ", "").trim();
-    db.settings.subscriptionName = name;
+  // unban
+  if (action === "unban") {
+    setAdminState(db, adminId, null);
+    const uid = text.trim();
+    delete db.banned?.[uid];
     saveDB(db);
-    await sendMsg(chatId, `✅ نام اشتراک به «${name}» تغییر یافت.`);
+    await sendMsg(chatId, `${e(ID.check)} مسدودی کاربر <code>${uid}</code> رفع شد.`);
     return true;
   }
 
-  // /addpoints [id] [n]
-  if (text.startsWith("/addpoints ")) {
-    const parts = text.split(" ");
-    const uid = parts[1];
-    const n = parseInt(parts[2]);
-    if (!db.users[uid] || isNaN(n)) { await sendMsg(chatId, "❌ پارامتر نامعتبر."); return true; }
+  // add_pts_id → get user id
+  if (action === "add_pts_id") {
+    const uid = text.trim();
+    if (!db.users[uid]) { await sendMsg(chatId, `${e(ID.cross)} کاربر یافت نشد.`); setAdminState(db, adminId, null); return true; }
+    setAdminState(db, adminId, { action: "add_pts_val", data: { uid } });
+    await sendMsg(chatId, `${e(ID.plus)} چند سکه به کاربر <code>${uid}</code> اضافه کنم؟`);
+    return true;
+  }
+
+  // add_pts_val → add points
+  if (action === "add_pts_val") {
+    const { uid } = stateData;
+    const n = parseInt(text);
+    setAdminState(db, adminId, null);
+    if (isNaN(n)) { await sendMsg(chatId, `${e(ID.cross)} عدد نامعتبر.`); return true; }
     db.users[uid].points += n;
     saveDB(db);
-    await sendMsg(chatId, `✅ ${n} امتیاز به کاربر ${uid} اضافه شد. امتیاز فعلی: ${db.users[uid].points}`);
+    await sendMsg(chatId, `${e(ID.check)} ${n} سکه به کاربر <code>${uid}</code> اضافه شد. موجودی: ${db.users[uid].points}`);
     return true;
   }
 
-  // /removepoints [id] [n]
-  if (text.startsWith("/removepoints ")) {
-    const parts = text.split(" ");
-    const uid = parts[1];
-    const n = parseInt(parts[2]);
-    if (!db.users[uid] || isNaN(n)) { await sendMsg(chatId, "❌ پارامتر نامعتبر."); return true; }
-    db.users[uid].points = Math.max(0, db.users[uid].points - n);
-    saveDB(db);
-    await sendMsg(chatId, `✅ امتیاز کاربر ${uid} به ${db.users[uid].points} رسید.`);
+  // set_pts_id → get user id
+  if (action === "set_pts_id") {
+    const uid = text.trim();
+    if (!db.users[uid]) { await sendMsg(chatId, `${e(ID.cross)} کاربر یافت نشد.`); setAdminState(db, adminId, null); return true; }
+    setAdminState(db, adminId, { action: "set_pts_val", data: { uid } });
+    await sendMsg(chatId, `${e(ID.money)} سکه کاربر <code>${uid}</code> را به چند تنظیم کنم؟`);
     return true;
   }
 
-  // Pending broadcast
-  if (db.pendingBroadcast[adminId]) {
-    delete db.pendingBroadcast[adminId];
+  // set_pts_val → set points
+  if (action === "set_pts_val") {
+    const { uid } = stateData;
+    const n = parseInt(text);
+    setAdminState(db, adminId, null);
+    if (isNaN(n) || n < 0) { await sendMsg(chatId, `${e(ID.cross)} عدد نامعتبر.`); return true; }
+    db.users[uid].points = n;
     saveDB(db);
-    const users = Object.keys(db.users);
-    let sent = 0, failed = 0;
-    await sendMsg(chatId, `📣 در حال ارسال به ${users.length} کاربر...`);
-    for (const uid of users) {
-      const r = await sendMsg(uid, text);
-      if (r.ok) sent++; else failed++;
-      await new Promise(r => setTimeout(r, 50));
+    await sendMsg(chatId, `${e(ID.check)} سکه کاربر <code>${uid}</code> به ${n} تنظیم شد.`);
+    return true;
+  }
+
+  // reset_pts → reset user points
+  if (action === "reset_pts") {
+    setAdminState(db, adminId, null);
+    const uid = text.trim();
+    if (!db.users[uid]) { await sendMsg(chatId, `${e(ID.cross)} کاربر یافت نشد.`); return true; }
+    db.users[uid].points = 0;
+    saveDB(db);
+    await sendMsg(chatId, `${e(ID.check)} سکه کاربر <code>${uid}</code> ری‌ست شد.`);
+    return true;
+  }
+
+  // manual_sub_id → get user id
+  if (action === "manual_sub_id") {
+    const uid = text.trim();
+    if (!db.users[uid]) { await sendMsg(chatId, `${e(ID.cross)} کاربر یافت نشد.`); setAdminState(db, adminId, null); return true; }
+    setAdminState(db, adminId, { action: "manual_sub_val", data: { uid } });
+    await sendMsg(chatId, `${e(ID.gift)} کانفیگ سرویس دستی را بنویسید:`);
+    return true;
+  }
+
+  // manual_sub_val → give config to user
+  if (action === "manual_sub_val") {
+    const { uid } = stateData;
+    setAdminState(db, adminId, null);
+    db.users[uid].subscriptions.push({ config: text.trim(), date: new Date().toISOString().slice(0, 10) });
+    saveDB(db);
+    await copyMsg(chatId, msg.message_id, parseInt(uid));
+    await sendMsg(chatId, `${e(ID.check)} سرویس دستی به کاربر <code>${uid}</code> ارسال شد.`);
+    return true;
+  }
+
+  // del_user
+  if (action === "del_user") {
+    setAdminState(db, adminId, null);
+    const uid = text.trim();
+    if (!db.users[uid]) { await sendMsg(chatId, `${e(ID.cross)} کاربر یافت نشد.`); return true; }
+    delete db.users[uid];
+    saveDB(db);
+    await sendMsg(chatId, `${e(ID.check)} کاربر <code>${uid}</code> حذف شد.`);
+    return true;
+  }
+
+  // set_welcome — uses copyMessage to support premium emoji in welcome message
+  if (action === "set_welcome") {
+    setAdminState(db, adminId, null);
+    if (text === "/resetwelcome") {
+      db.settings.welcomeText = null;
+      saveDB(db);
+      await sendMsg(chatId, `${e(ID.check)} متن خوش‌آمد به حالت پیش‌فرض برگشت.`);
+      return true;
     }
-    await sendMsg(chatId, `✅ ارسال تمام شد.\n✔️ موفق: ${sent}\n❌ ناموفق: ${failed}`);
+    // Store text (entities will be in the copied message)
+    db.settings.welcomeText = text;
+    db.settings.welcomeMsgRef = { chatId, messageId: msg.message_id };
+    saveDB(db);
+    await sendMsg(chatId, `${e(ID.check)} متن خوش‌آمد تنظیم شد.`);
     return true;
   }
 
-  // Pending add config
-  if (db.pendingAddConfig[adminId]) {
-    delete db.pendingAddConfig[adminId];
+  // addconfig
+  if (action === "addconfig") {
+    setAdminState(db, adminId, null);
     if (!db.settings.configs) db.settings.configs = [];
     db.settings.configs.push(text.trim());
     saveDB(db);
-    await sendMsg(chatId, `✅ کانفیگ اضافه شد. تعداد کل: ${db.settings.configs.length}`);
+    await sendMsg(chatId, `${e(ID.check)} کانفیگ اضافه شد. تعداد کل: ${db.settings.configs.length}`);
     return true;
   }
 
   return false;
 }
 
-async function handleCallbackExtra(callbackQuery, db) {
-  const data = callbackQuery.data;
-  const chatId = callbackQuery.message.chat.id;
-  const msgId = callbackQuery.message.message_id;
-  const username = callbackQuery.from.username?.toLowerCase();
-
-  if (username !== ADMIN_USERNAME) {
-    await api("answerCallbackQuery", { callback_query_id: callbackQuery.id, text: "⛔️ دسترسی ندارید." });
-    return;
-  }
-
-  await api("answerCallbackQuery", { callback_query_id: callbackQuery.id });
-
-  if (data.startsWith("pts_add_")) {
-    const uid = data.replace("pts_add_", "");
-    db.pendingAddPoints[callbackQuery.from.id] = uid;
-    saveDB(db);
-    await editMsg(chatId, msgId, `➕ چند امتیاز به کاربر ${uid} اضافه کنم؟\n\nبنویسید: /addpoints ${uid} [عدد]`);
-
-  } else if (data.startsWith("pts_rem_")) {
-    const uid = data.replace("pts_rem_", "");
-    await editMsg(chatId, msgId, `➖ برای کاهش امتیاز بنویسید:\n/removepoints ${uid} [عدد]`);
-
-  } else if (data.startsWith("ban_")) {
-    const uid = data.replace("ban_", "");
-    if (db.banned[uid]) {
-      delete db.banned[uid];
-      saveDB(db);
-      await editMsg(chatId, msgId, `✅ کاربر ${uid} آنبن شد.`);
-    } else {
-      db.banned[uid] = true;
-      saveDB(db);
-      await editMsg(chatId, msgId, `🚫 کاربر ${uid} بن شد.`);
+async function sendUserInfo(chatId, u, db) {
+  const uname = u.username ? `@${u.username}` : "—";
+  const banned = db.banned?.[u.id] ? "بله" : "خیر";
+  await sendMsg(chatId,
+    `${e(ID.user_icon)} <b>اطلاعات کاربر</b>\n\n${e(ID.search)} آیدی: <code>${u.id}</code>\n${e(ID.hero)} نام: ${u.name}\n${e(ID.info)} یوزرنیم: ${uname}\n${e(ID.money)} امتیاز: ${u.points}\n${e(ID.trophy)} دعوت‌ها: ${u.referrals}\n${e(ID.calendar)} عضویت: ${u.joinDate}\n${e(ID.gift)} اشتراک‌ها: ${u.subscriptions.length}\n${e(ID.cross)} بن: ${banned}`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [ib("افزودن سکه", `qs_add_${u.id}`, ID.plus), ib("ری‌ست سکه", `qs_rst_${u.id}`, ID.moon)],
+          [ib("مسدود/رفع مسدودی", `qs_ban_${u.id}`, ID.cross), ib("حذف کاربر", `qs_del_${u.id}`, ID.trash)],
+        ],
+      },
     }
+  );
+}
+
+// ─── Admin Quick Actions ──────────────────────────────────────────────────────
+async function handleQuickAction(cq, db) {
+  const data = cq.data;
+  const chatId = cq.message.chat.id;
+  const adminId = cq.from.id;
+  if (cq.from.username?.toLowerCase() !== ADMIN_USERNAME) {
+    await answerCb(cq.id, "⛔️ دسترسی ندارید.", true); return;
+  }
+  await answerCb(cq.id);
+
+  if (data.startsWith("qs_add_")) {
+    const uid = data.replace("qs_add_", "");
+    setAdminState(db, adminId, { action: "add_pts_val", data: { uid } });
+    await sendMsg(chatId, `${e(ID.plus)} چند سکه به کاربر <code>${uid}</code> اضافه کنم؟`);
+  } else if (data.startsWith("qs_rst_")) {
+    const uid = data.replace("qs_rst_", "");
+    db.users[uid].points = 0; saveDB(db);
+    await sendMsg(chatId, `${e(ID.check)} سکه کاربر <code>${uid}</code> ری‌ست شد.`);
+  } else if (data.startsWith("qs_ban_")) {
+    const uid = data.replace("qs_ban_", "");
+    if (!db.banned) db.banned = {};
+    if (db.banned[uid]) { delete db.banned[uid]; await sendMsg(chatId, `${e(ID.check)} مسدودی رفع شد.`); }
+    else { db.banned[uid] = true; await sendMsg(chatId, `${e(ID.check)} کاربر مسدود شد.`); }
+    saveDB(db);
+  } else if (data.startsWith("qs_del_")) {
+    const uid = data.replace("qs_del_", "");
+    delete db.users[uid]; saveDB(db);
+    await sendMsg(chatId, `${e(ID.check)} کاربر <code>${uid}</code> حذف شد.`);
   }
 }
 
-// ─── Main Handler ─────────────────────────────────────────────────────────────
-async function handleMessage(msg) {
-  const db = loadDB();
-  const chatId = msg.chat.id;
-  const userId = msg.from?.id;
+// ─── Admin Commands (slash) ───────────────────────────────────────────────────
+async function handleAdminCommands(msg, db) {
   const text = msg.text || "";
-  const username = msg.from?.username?.toLowerCase();
-  const name = msg.from?.first_name || "کاربر";
-  const uname = msg.from?.username || null;
+  const chatId = msg.chat.id;
+  if (msg.from.username?.toLowerCase() !== ADMIN_USERNAME) return false;
+
+  if (text.startsWith("/setcost ")) {
+    const n = parseInt(text.split(" ")[1]);
+    if (isNaN(n) || n < 1) { await sendMsg(chatId, `${e(ID.cross)} عدد نامعتبر.`); return true; }
+    db.settings.subscriptionCost = n; saveDB(db);
+    await sendMsg(chatId, `${e(ID.check)} هزینه اشتراک به ${n} امتیاز تغییر یافت.`); return true;
+  }
+  if (text.startsWith("/setname ")) {
+    db.settings.subscriptionName = text.replace("/setname ", "").trim(); saveDB(db);
+    await sendMsg(chatId, `${e(ID.check)} نام اشتراک تغییر یافت.`); return true;
+  }
+  if (text.startsWith("/setchannel ")) {
+    const ch = text.replace("/setchannel ", "").trim().replace("@", "");
+    // Note: channel is currently hardcoded, guide admin
+    await sendMsg(chatId, `${e(ID.info)} برای تغییر کانال اجباری، مقدار MANDATORY_CHANNEL را در کد ربات به <code>${ch}</code> تغییر دهید.`); return true;
+  }
+  return false;
+}
+
+// ─── Main Message Handler ─────────────────────────────────────────────────────
+async function onMessage(msg) {
+  const db = loadDB();
+  const { id: userId, first_name, username } = msg.from || {};
+  const chatId = msg.chat?.id;
+  const text = msg.text || "";
 
   if (!userId || chatId < 0) return;
+  if (db.banned?.[userId]) return;
 
-  // Check ban
-  if (db.banned[userId]) return;
+  getUser(db, userId, first_name, username || null);
 
-  // Register user
-  getUser(db, userId, name, uname);
-
-  // /start
-  if (text.startsWith("/start")) {
-    await handleStart(msg, db);
-    return;
-  }
-
-  // /admin
+  if (text.startsWith("/start")) { await handleStart(msg, db); return; }
   if (text === "/admin") {
-    await handleAdminCommand(chatId, username, db);
+    if (username?.toLowerCase() !== ADMIN_USERNAME) { await sendMsg(chatId, `${e(ID.cross)} دسترسی ندارید.`); return; }
+    await showAdminPanel(chatId, db); return;
+  }
+
+  // Admin commands
+  if (username?.toLowerCase() === ADMIN_USERNAME) {
+    if (await handleAdminCommands(msg, db)) return;
+    if (await handleAdminState(msg, db, userId)) return;
+  }
+
+  // Maintenance mode
+  if (db.settings.maintenanceMode && username?.toLowerCase() !== ADMIN_USERNAME) {
+    await sendMsg(chatId, `${e(ID.tool)} ربات در حال تعمیر است. لطفاً بعداً مراجعه کنید.`); return;
+  }
+
+  // Keyboard buttons
+  if (text === "دریافت اشتراک") { await handleSubscribe(chatId, userId, db); return; }
+  if (text === "دعوت دوستان")   { await handleInvite(chatId, userId, db); return; }
+  if (text === "پروفایل")       { await handleProfile(chatId, userId, db); return; }
+  if (text === "پشتیبانی")      { await sendMsg(chatId, "فاقد ورودی!"); return; }
+  if (text === "قوانین")        { await sendMsg(chatId, rulesText()); return; }
+  if (text === "راهنما")        { await sendMsg(chatId, guideText(db)); return; }
+
+  await sendMsg(chatId, `${e(ID.bulb)} لطفاً از دکمه‌های زیر استفاده کنید:`, { reply_markup: mainKeyboard() });
+}
+
+// ─── Callback Query Handler ───────────────────────────────────────────────────
+async function onCallback(cq) {
+  const db = loadDB();
+  const data = cq.data || "";
+
+  if (data === "verify_membership") {
+    const { id: userId, first_name, username } = cq.from;
+    const chatId = cq.message.chat.id;
+    const msgId = cq.message.message_id;
+    const member = await isMember(userId, MANDATORY_CHANNEL);
+    if (member) {
+      getUser(db, userId, first_name, username || null);
+      await api("editMessageReplyMarkup", { chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard: [] } });
+      await sendMsg(chatId, welcomeText(db.settings.welcomeText), { reply_markup: mainKeyboard() });
+    } else {
+      await answerCb(cq.id, "هنوز عضو نشدید! ابتدا در کانال عضو شوید.", true);
+    }
     return;
   }
 
-  // Admin text commands
-  if (username === ADMIN_USERNAME) {
-    const handled = await handleAdminTextCommands(msg, db);
-    if (handled) return;
+  if (data === "show_invite") {
+    const { id: userId, first_name, username } = cq.from;
+    getUser(db, userId, first_name, username || null);
+    await answerCb(cq.id);
+    await handleInvite(cq.message.chat.id, userId, db);
+    return;
   }
 
-  // Main keyboard buttons
-  if (text === "دریافت اشتراک") {
-    await handleSubscribe(chatId, userId, db);
-  } else if (text === "دعوت دوستان") {
-    await handleInvite(chatId, userId, db);
-  } else if (text === "پروفایل") {
-    await handleProfile(chatId, userId, db);
-  } else if (text === "پشتیبانی") {
-    await sendMsg(chatId, "فاقد ورودی!");
-  } else if (text === "قوانین") {
-    await sendMsg(chatId, rulesText());
-  } else if (text === "راهنما") {
-    await sendMsg(chatId, guideText(db));
-  } else {
-    // Show keyboard if no match
-    if (!text.startsWith("/")) {
-      await sendMsg(chatId, "❓ لطفاً از دکمه‌های زیر استفاده کنید:", { reply_markup: mainKeyboard() });
-    }
-  }
+  if (data.startsWith("qs_")) { await handleQuickAction(cq, db); return; }
+  if (data.startsWith("a_"))  { await handleAdminCallback(cq, db); return; }
+
+  await answerCb(cq.id);
 }
 
-async function handleCallback(callbackQuery) {
-  const db = loadDB();
-  const data = callbackQuery.data || "";
-
-  const adminCallbacks = [
-    "admin_stats", "admin_users", "admin_broadcast", "admin_settings",
-    "admin_add_config", "admin_points", "admin_cancel", "admin_back",
-    "verify_membership", "show_invite"
-  ];
-
-  if (adminCallbacks.includes(data) || data === "verify_membership" || data === "show_invite") {
-    await handleAdminCallback(callbackQuery, db);
-  } else if (data.startsWith("pts_") || data.startsWith("ban_")) {
-    await handleCallbackExtra(callbackQuery, db);
-  } else {
-    await api("answerCallbackQuery", { callback_query_id: callbackQuery.id });
-  }
-}
-
-// ─── Poll Loop ────────────────────────────────────────────────────────────────
+// ─── Poll ─────────────────────────────────────────────────────────────────────
 let offset = 0;
-
 async function poll() {
   await getBotInfo();
-  console.log("🤖 Bot started, polling...");
-
+  console.log("Bot started.");
   while (true) {
     try {
-      const data = await api("getUpdates", { offset, timeout: 30, allowed_updates: ["message", "callback_query"] });
-      if (!data.ok) {
-        await new Promise(r => setTimeout(r, 3000));
-        continue;
-      }
-
-      for (const update of data.result) {
-        offset = update.update_id + 1;
+      const r = await api("getUpdates", { offset, timeout: 30, allowed_updates: ["message", "callback_query"] });
+      if (!r.ok) { await new Promise(x => setTimeout(x, 3000)); continue; }
+      for (const upd of r.result) {
+        offset = upd.update_id + 1;
         try {
-          if (update.message) await handleMessage(update.message);
-          if (update.callback_query) await handleCallback(update.callback_query);
-        } catch (e) {
-          console.error("Handler error:", e.message);
-        }
+          if (upd.message)        await onMessage(upd.message);
+          if (upd.callback_query) await onCallback(upd.callback_query);
+        } catch (err) { console.error("Handler error:", err.message); }
       }
-    } catch (e) {
-      console.error("Poll error:", e.message);
-      await new Promise(r => setTimeout(r, 3000));
+    } catch (err) {
+      console.error("Poll error:", err.message);
+      await new Promise(x => setTimeout(x, 3000));
     }
   }
 }
