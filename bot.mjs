@@ -869,10 +869,31 @@ async function onCallback(cq) {
   await answerCb(cq.id);
 }
 
+// ─── Startup: push new keyboard to all existing users ────────────────────────
+async function resetKeyboardForAllUsers() {
+  const db = loadDB();
+  const userIds = Object.keys(db.users);
+  if (!userIds.length) return;
+  console.log(`Sending new keyboard to ${userIds.length} users...`);
+  for (const uid of userIds) {
+    try {
+      await api("sendMessage", {
+        chat_id: parseInt(uid),
+        text: `${e(ID.bell)} <b>ربات آپدیت شد!</b>\n\n${e(ID.check)} کیبورد جدید فعال شد.`,
+        parse_mode: "HTML",
+        reply_markup: mainKeyboard(),
+      });
+      await new Promise(r => setTimeout(r, 50));
+    } catch {}
+  }
+  console.log("Keyboard reset done.");
+}
+
 // ─── Poll ─────────────────────────────────────────────────────────────────────
 let offset = 0;
 async function poll() {
   await getBotInfo();
+  await resetKeyboardForAllUsers();
   console.log("Bot started.");
   while (true) {
     try {
